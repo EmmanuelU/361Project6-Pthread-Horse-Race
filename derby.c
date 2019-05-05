@@ -17,11 +17,11 @@
 #define HORSE_TRACK_MICROSECONDS 100000 // 0.1 seconds
 #define HORSE_WAIT_TIME 2 //give horses enough time to prepare for the race
 
-pthread_mutex_t start_gate_mutex;
+pthread_mutex_t start_gate_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t starting_pistol = PTHREAD_COND_INITIALIZER;
 
-pthread_mutex_t track_mutex;
-pthread_cond_t track_position_busy;
+pthread_mutex_t track_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t track_position_busy = PTHREAD_COND_INITIALIZER;
 
 int track_position[NUM_TRACKS][TRACK_DISTANCE];
 
@@ -46,7 +46,7 @@ void *race_horse(void *arguments){
 	
 	pthread_mutex_lock(&start_gate_mutex);
 	pthread_cond_wait(&starting_pistol, &start_gate_mutex); //wait for starting pistol
-	pthread_mutex_unlock(&start_gate_mutex); // unlocking for all other threads
+	pthread_mutex_unlock(&start_gate_mutex); // unlock and pass to next thread to unlock
 	
 	laneX = index;
 	positionY = 0;
@@ -85,16 +85,19 @@ void *race_horse(void *arguments){
 		}
 		
 		pthread_mutex_lock(&track_mutex);
-		while (track_position[laneX][positionY])
-			pthread_cond_wait(&track_position_busy, &track_mutex);
+		
+		//while(track_position[laneX][positionY] == 1)
+		//	pthread_cond_wait(&track_position_busy, &track_mutex);
 		
 		track_position[laneX][positionY] = 1;
-		
 		printf("Horse: %d, Lane: %d, Position: %d, Lap: %d\n", index, laneX, positionY, lap);
+		
+		usleep(HORSE_TRACK_MICROSECONDS);
 		track_position[laneX][positionY] = 0;
 		pthread_mutex_unlock(&track_mutex);
+		//pthread_cond_signal(&track_position_busy);
 
-		usleep(HORSE_TRACK_MICROSECONDS);
+		
 	} while (lap < NUM_LAPS);
 	
 	printf("Horse %d: Ended.\n", index); //horse reached the end of the track
@@ -108,6 +111,8 @@ int main(void) {
 	int thread_id[NUM_TRACKS];
 	int i, j;
 	int ret;
+	
+	pthread_mutex_init(&track_mutex,NULL); //initiliaze the pthread mutex
 	
 	for (i = 0; i < NUM_TRACKS; i++) {
 		for(j = 0; j < TRACK_DISTANCE; j++) { //prepare track for race
@@ -129,7 +134,6 @@ int main(void) {
 	}
 	printf(" .. GO!\n");
 	
-	pthread_mutex_init(&track_mutex,NULL); //initiliaze the pthread mutex
 	pthread_cond_broadcast(&starting_pistol);
 	
 	for (i = 0; i < NUM_TRACKS; i++) {
