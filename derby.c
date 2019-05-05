@@ -34,7 +34,7 @@ void *race_horse(void *arguments){
 	
 	printf("Horse %d: Ended.\n", index);
 	
-	
+	//Which C standard do you use?
 	pthread_exit(NULL);
 }
 
@@ -44,11 +44,10 @@ int main(void) {
 	int i;
 	int ret;
 	
-	
 	for (i = 0; i < NUM_TRACKS; i++) {
 		thread_id[i] = i;
 		ret = pthread_create(&horse[i], NULL, race_horse, &thread_id[i]);
-		assert(!ret);
+		assert(!ret && "Horse injured during race, event canceled.");
 	}
 	
 	sleep(HORSE_WAIT_TIME);
