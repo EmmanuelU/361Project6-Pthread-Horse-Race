@@ -12,7 +12,7 @@
 
 #define NUM_TRACKS 10
 #define HORSE_COUNTDOWN_TIME 3
-#define HORSE_TRACK_MICROSECONDS 1000000
+#define HORSE_TRACK_MICROSECONDS 100000 // 1/10 seconds
 
 //give horses enough time to prepare for the race
 #define HORSE_WAIT_TIME 1
@@ -20,21 +20,51 @@
 pthread_mutex_t start_gate_mutex;
 pthread_cond_t starting_pistol = PTHREAD_COND_INITIALIZER;
 
+enum
+{
+	MOVE_FORWARD,
+	MOVE_LEFT,
+	MOVE_RIGHT
+	
+} HORSE_ACTIONS;
+
+int get_random_action()
+{
+	return (rand() % 3);
+}
+
 void *race_horse(void *arguments){
 	
 	int index = *((int *) arguments);
+	int action;
 	pthread_mutex_lock(&start_gate_mutex);
 	
 	pthread_cond_wait(&starting_pistol, &start_gate_mutex); //wait for starting pistol
 	pthread_mutex_unlock(&start_gate_mutex); // unlocking for all other threads
 	
-	printf("Horse %d: has begun.\n", index);
+	printf("Horse %d starts\n", index);
 	
-	usleep(HORSE_TRACK_MICROSECONDS); //
+	usleep(HORSE_TRACK_MICROSECONDS);
+	action = get_random_action();
+	
+	switch (action)
+	{
+		case MOVE_FORWARD:
+			printf("Horse %d: Forward.\n", index);
+			break;
+			
+		case MOVE_LEFT:
+			printf("Horse %d: Left.\n", index);
+			break;
+			
+		case MOVE_RIGHT:
+			printf("Horse %d: Right.\n", index);
+			break;
+	}
 	
 	printf("Horse %d: Ended.\n", index);
 	
-	//Which C standard do you use?
+	//dont use pthreads on mac, but I code on a mac so this is so my IDE does not complain
 	pthread_exit(NULL);
 }
 
@@ -59,7 +89,6 @@ int main(void) {
 	{
 		sleep(1);
 		i--;
-		
 		printf(", %d", i);
 	}
 	
