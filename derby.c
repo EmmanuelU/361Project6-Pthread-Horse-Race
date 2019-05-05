@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #define NUM_TRACKS 10
+#define NUM_LAPS 1
 #define TRACK_DISTANCE 20
 #define HORSE_COUNTDOWN_TIME 3
 #define HORSE_TRACK_MICROSECONDS 100000 // 0.1 seconds
@@ -41,7 +42,7 @@ void *race_horse(void *arguments){
 	
 	int index = *((int *) arguments);
 	int action;
-	int laneX, positionY;
+	int laneX, positionY, lap;
 	
 	pthread_mutex_lock(&start_gate_mutex);
 	pthread_cond_wait(&starting_pistol, &start_gate_mutex); //wait for starting pistol
@@ -49,17 +50,12 @@ void *race_horse(void *arguments){
 	
 	laneX = index;
 	positionY = 0;
+	lap = 0;
 	printf("Horse %d starts\n", index);
 	
-	while(positionY < TRACK_DISTANCE)
+	do
 	{
 		action = get_random_action();
-		
-		/*
-		pthread_mutex_lock(&track_mutex);
-		while (track_position[laneX][positionY])
-			pthread_cond_wait(&track_position_busy, &track_mutex);
-		*/
 		
 		switch (action)
 		{
@@ -82,17 +78,29 @@ void *race_horse(void *arguments){
 				break;
 		}
 		
-		track_position[laneX][positionY] = 1;
-		//pthread_mutex_unlock(&track_mutex);
+		if(positionY >= TRACK_DISTANCE)
+		{
+			lap++;
+			positionY = 0;
+		}
 		
-		usleep(HORSE_TRACK_MICROSECONDS);
-		printf("Horse: %d, Lane: %d, Position: %d, Lap: %d\n", index, laneX, positionY, track_position[laneX][positionY]);
+		pthread_mutex_lock(&track_mutex);
+		while (track_position[laneX][positionY])
+			pthread_cond_wait(&track_position_busy, &track_mutex);
+		
+		track_position[laneX][positionY] = 1;
+		
+		printf("Horse: %d, Lane: %d, Position: %d, Lap: %d\n", index, laneX, positionY, lap);
 		track_position[laneX][positionY] = 0;
-	}
+		pthread_mutex_unlock(&track_mutex);
+
+		usleep(HORSE_TRACK_MICROSECONDS);
+	} while (lap < NUM_LAPS);
+	
 	printf("Horse %d: Ended.\n", index); //horse reached the end of the track
 	
 	//dont use pthreads on mac, but I code on a mac so this is so my IDE does not complain
-	pthread_exit(NULL);
+	//pthread_exit(NULL);
 }
 
 int main(void) {
@@ -101,18 +109,14 @@ int main(void) {
 	int i, j;
 	int ret;
 	
-	for(i = 0; i < NUM_TRACKS; i++) { //prepare track for race
-		for(j = 0; j < TRACK_DISTANCE; j++) {
-				track_position[i][j] = 0;
-		}
-	}
-	
 	for (i = 0; i < NUM_TRACKS; i++) {
+		for(j = 0; j < TRACK_DISTANCE; j++) { //prepare track for race
+			track_position[i][j] = 0;
+		}
 		thread_id[i] = i;
 		ret = pthread_create(&horse[i], NULL, race_horse, &thread_id[i]);
 		assert(!ret && "Horse injured during race, event canceled.");
 	}
-	sleep(HORSE_WAIT_TIME);
 	
 	//countdown sequence, formatted to match weird rubric
 	i = HORSE_COUNTDOWN_TIME;
@@ -125,15 +129,15 @@ int main(void) {
 	}
 	printf(" .. GO!\n");
 	
+	pthread_mutex_init(&track_mutex,NULL); //initiliaze the pthread mutex
 	pthread_cond_broadcast(&starting_pistol);
-	
-	//sleep(HORSE_WAIT_TIME);
 	
 	for (i = 0; i < NUM_TRACKS; i++) {
 		ret = pthread_join(horse[i], NULL);
 		assert(!ret);
 	}
 	
+	pthread_mutex_destroy(&track_mutex);
 	printf("The race finishes!\n");
 	return 0;
 }
