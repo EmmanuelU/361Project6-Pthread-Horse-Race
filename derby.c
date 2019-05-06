@@ -19,11 +19,11 @@
 #define HORSE_TRACK_MICROSECONDS 100000 // 0.1 seconds
 #define HORSE_WAIT_TIME 2 //give horses enough time to prepare for the race
 
-pthread_mutex_t start_gate_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t start_gate_mutex;
 pthread_cond_t starting_pistol = PTHREAD_COND_INITIALIZER;
 
-pthread_mutex_t track_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t track_position_busy = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t track_mutex;
+pthread_cond_t track_position_update = PTHREAD_COND_INITIALIZER;
 
 pthread_barrier_t barr;
 
@@ -65,6 +65,7 @@ void *race_horse(void *arguments){
 	int index = *((int *) arguments);
 	int action;
 	int laneX, positionY, lap;
+	int newX, newY;
 	
 	laneX = index;
 	positionY = 0;
@@ -75,7 +76,7 @@ void *race_horse(void *arguments){
 	pthread_cond_wait(&starting_pistol, &start_gate_mutex); //wait for starting pistol
 	pthread_mutex_unlock(&start_gate_mutex); // unlock and pass to next thread to unlock
 	
-	pthread_barrier_wait(&barr); //horses start same time
+	pthread_barrier_wait(&barr); //horses prepare during same time
 	
 	printf("Horse %d starts\n", index);
 	
@@ -85,37 +86,41 @@ void *race_horse(void *arguments){
 	{
 		action = get_random_action();
 		
-		if(laneX > 0 && laneX < NUM_TRACKS) //stay within track bounds
-			laneX += get_action_distance(action, 0);
 		
-		positionY += get_action_distance(action, 1);
+		if(laneX > 0 && laneX < NUM_TRACKS) //stay within track bounds
+			newX = laneX + get_action_distance(action, 0);
+		else
+			newX = laneX;
+		
+		newY = positionY + get_action_distance(action, 1);
+		
+		pthread_mutex_lock(&track_mutex);
+		
+		while(track_position[newX][newY]) //position == 1 when busy
+		{
+			pthread_cond_wait(&track_position_update, &track_mutex);
+		}
+		
+		track_position[laneX][positionY] = 0;
+		laneX = newX;
+		positionY = newY;
 		
 		if(positionY >= TRACK_DISTANCE)
 		{
 			lap++;
 			positionY = 0;
 		}
+		track_position[laneX][positionY] = 1;
 		
-		pthread_mutex_lock(&track_mutex);
-		
-		if(track_position[laneX][positionY])
-		   laneX -= get_action_distance(action, 0);
-		
-		while(track_position[laneX][positionY])
-		{
-			pthread_cond_wait(&track_position_busy, &track_mutex);
-		}
-			
+		pthread_cond_signal(&track_position_update);
+		pthread_mutex_unlock(&track_mutex);
 		
 		printf("Horse: %d, Lane: %d, Position: %d, Lap: %d\n", index, laneX, positionY, lap);
-		track_position[laneX][positionY] = 1;
-		pthread_mutex_unlock(&track_mutex);
-		pthread_cond_signal(&track_position_busy);
-		
 		usleep(HORSE_TRACK_MICROSECONDS);
 		
 		pthread_mutex_lock(&track_mutex);
 		track_position[laneX][positionY] = 0;
+		pthread_cond_signal(&track_position_update);
 		pthread_mutex_unlock(&track_mutex);
 		
 	} while (lap < NUM_LAPS);
@@ -146,7 +151,7 @@ int main(void) {
 		assert(!ret && "Horse injured during race, event canceled.");
 	}
 	
-	//countdown sequence, formatted to match weird rubric
+	//countdown sequence, formatted to match rubric
 	i = HORSE_COUNTDOWN_TIME;
 	printf("%d", i);
 	while(i > 1)
@@ -164,6 +169,7 @@ int main(void) {
 		assert(!ret);
 	}
 	
+	pthread_mutex_destroy(&start_gate_mutex);
 	pthread_mutex_destroy(&track_mutex);
 	printf("The race finishes!\n");
 	return 0;
