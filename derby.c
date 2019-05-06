@@ -4,6 +4,8 @@
  655390858
  */
 
+#define _XOPEN_SOURCE 600 // Required to use the barriers
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -23,6 +25,8 @@ pthread_cond_t starting_pistol = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t track_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t track_position_busy = PTHREAD_COND_INITIALIZER;
 
+pthread_barrier_t barr;
+
 int track_position[NUM_TRACKS][TRACK_DISTANCE];
 
 enum
@@ -38,11 +42,31 @@ int get_random_action()
 	return (rand() % 3);
 }
 
+int get_action_distance(int action, int forward)
+{
+	switch (action)
+	{
+		case MOVE_FORWARD:
+			return forward ? 2 : 1;
+			
+		case MOVE_LEFT:
+			return forward ? 1 : -1;
+			
+		case MOVE_RIGHT:
+			return 1;
+			
+		default:
+			return 0;
+	}
+}
+
 void *race_horse(void *arguments){
 	
 	int index = *((int *) arguments);
 	int action;
 	int laneX, positionY, lap;
+	
+	usleep(HORSE_TRACK_MICROSECONDS);
 	
 	pthread_mutex_lock(&start_gate_mutex);
 	pthread_cond_wait(&starting_pistol, &start_gate_mutex); //wait for starting pistol
@@ -51,32 +75,19 @@ void *race_horse(void *arguments){
 	laneX = index;
 	positionY = 0;
 	lap = 0;
+	
+	pthread_barrier_wait(&barr);
+	
 	printf("Horse %d starts\n", index);
 	
 	do
 	{
 		action = get_random_action();
 		
-		switch (action)
-		{
-			case MOVE_FORWARD:
-				positionY += 2;
-				break;
-				
-			case MOVE_LEFT:
-				if(laneX > 0) //cannot be on a negative track
-					laneX -= 1;
-				
-				positionY += 1;
-				break;
-				
-			case MOVE_RIGHT:
-				if(laneX < NUM_TRACKS) //cannot run off track
-					laneX += 1;
-				
-				positionY += 1;
-				break;
-		}
+		if(laneX > 0 && laneX < NUM_TRACKS) //stay within track bounds
+			laneX += get_action_distance(action, 0);
+		
+		positionY += get_action_distance(action, 1);
 		
 		if(positionY >= TRACK_DISTANCE)
 		{
@@ -86,17 +97,25 @@ void *race_horse(void *arguments){
 		
 		pthread_mutex_lock(&track_mutex);
 		
-		//while(track_position[laneX][positionY] == 1)
-		//	pthread_cond_wait(&track_position_busy, &track_mutex);
+		if(track_position[laneX][positionY])
+		{
+			if(laneX > 0 && laneX < NUM_TRACKS)
+				laneX -= get_action_distance(action, 0);
+			
+			pthread_cond_wait(&track_position_busy, &track_mutex);
+		}
+			
 		
-		track_position[laneX][positionY] = 1;
 		printf("Horse: %d, Lane: %d, Position: %d, Lap: %d\n", index, laneX, positionY, lap);
+		track_position[laneX][positionY] = 1;
+		pthread_mutex_unlock(&track_mutex);
 		
 		usleep(HORSE_TRACK_MICROSECONDS);
+		
+		pthread_mutex_lock(&track_mutex);
 		track_position[laneX][positionY] = 0;
+		pthread_cond_signal(&track_position_busy);
 		pthread_mutex_unlock(&track_mutex);
-		//pthread_cond_signal(&track_position_busy);
-
 		
 	} while (lap < NUM_LAPS);
 	
@@ -113,6 +132,7 @@ int main(void) {
 	int ret;
 	
 	pthread_mutex_init(&track_mutex,NULL); //initiliaze the pthread mutex
+	pthread_barrier_init(&barr, NULL, NUM_TRACKS);
 	
 	for (i = 0; i < NUM_TRACKS; i++) {
 		for(j = 0; j < TRACK_DISTANCE; j++) { //prepare track for race
