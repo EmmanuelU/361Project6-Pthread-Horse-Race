@@ -66,19 +66,20 @@ void *race_horse(void *arguments){
 	int action;
 	int laneX, positionY, lap;
 	
-	usleep(HORSE_TRACK_MICROSECONDS);
+	laneX = index;
+	positionY = 0;
+	lap = 0;
+	
 	
 	pthread_mutex_lock(&start_gate_mutex);
 	pthread_cond_wait(&starting_pistol, &start_gate_mutex); //wait for starting pistol
 	pthread_mutex_unlock(&start_gate_mutex); // unlock and pass to next thread to unlock
 	
-	laneX = index;
-	positionY = 0;
-	lap = 0;
-	
-	pthread_barrier_wait(&barr);
 	
 	printf("Horse %d starts\n", index);
+	pthread_barrier_wait(&barr);
+	
+	usleep(HORSE_TRACK_MICROSECONDS);
 	
 	do
 	{
@@ -132,6 +133,8 @@ int main(void) {
 	int ret;
 	
 	pthread_mutex_init(&track_mutex,NULL); //initiliaze the pthread mutex
+	pthread_mutex_init(&start_gate_mutex,NULL); //initiliaze the pthread mutex
+	
 	pthread_barrier_init(&barr, NULL, NUM_TRACKS);
 	
 	for (i = 0; i < NUM_TRACKS; i++) {
