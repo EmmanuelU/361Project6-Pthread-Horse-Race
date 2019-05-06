@@ -75,11 +75,11 @@ void *race_horse(void *arguments){
 	pthread_cond_wait(&starting_pistol, &start_gate_mutex); //wait for starting pistol
 	pthread_mutex_unlock(&start_gate_mutex); // unlock and pass to next thread to unlock
 	
+	pthread_barrier_wait(&barr); //horses start same time
 	
 	printf("Horse %d starts\n", index);
-	pthread_barrier_wait(&barr);
 	
-	usleep(HORSE_TRACK_MICROSECONDS);
+	pthread_barrier_wait(&barr); //horses start same time
 	
 	do
 	{
@@ -99,10 +99,10 @@ void *race_horse(void *arguments){
 		pthread_mutex_lock(&track_mutex);
 		
 		if(track_position[laneX][positionY])
+		   laneX -= get_action_distance(action, 0);
+		
+		while(track_position[laneX][positionY])
 		{
-			if(laneX > 0 && laneX < NUM_TRACKS)
-				laneX -= get_action_distance(action, 0);
-			
 			pthread_cond_wait(&track_position_busy, &track_mutex);
 		}
 			
@@ -110,12 +110,12 @@ void *race_horse(void *arguments){
 		printf("Horse: %d, Lane: %d, Position: %d, Lap: %d\n", index, laneX, positionY, lap);
 		track_position[laneX][positionY] = 1;
 		pthread_mutex_unlock(&track_mutex);
+		pthread_cond_signal(&track_position_busy);
 		
 		usleep(HORSE_TRACK_MICROSECONDS);
 		
 		pthread_mutex_lock(&track_mutex);
 		track_position[laneX][positionY] = 0;
-		pthread_cond_signal(&track_position_busy);
 		pthread_mutex_unlock(&track_mutex);
 		
 	} while (lap < NUM_LAPS);
